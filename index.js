@@ -1,5 +1,9 @@
 const WebSocket = require('ws');
 const service = require('./data');
+const path = require('path');
+
+const http = require('http');
+const fs = require('fs');
 
 const originalLog = console.log;
 console.log = function() {
@@ -11,10 +15,39 @@ console.log = function() {
   
   originalLog.apply(console, [`[${timestamp}]`, ...arguments]);
 };
+const HTTP_PORT = process.argv[2] || 8081; // 合并后的统一端口
+const HTTP_DIRECTORY = path.join(__dirname, 'www'); // 静态文件目录
 
-// 接收启动参数作为端口号，默认8081
-const PORT = process.argv[2] || 8081;
-const server = new WebSocket.Server({ port: PORT });
+// 创建 HTTP 服务器
+const server = http.createServer((req, res) => {
+  let urlPath = decodeURIComponent(req.url.split('?')[0]); // 去掉查询参数
+  if (urlPath === '/') {
+    urlPath = '/index.html'; // 默认访问 index.html
+  }
+  let filePath = path.join(HTTP_DIRECTORY, urlPath);
+  fs.stat(filePath, (err, stats) => {
+    if (err || !stats.isFile()) {
+      // 如果文件不存在，返回 index.html
+      filePath = path.join(HTTP_DIRECTORY, 'index.html');
+    }
+
+    // 设置缓存头
+    const ext = path.extname(filePath);
+    if (ext === '.js' || ext === '.css') {
+      res.setHeader('Cache-Control', 'public, max-age=2592000'); // 30天缓存
+    }
+
+    fs.createReadStream(filePath).pipe(res);
+  });
+});
+
+server.listen(HTTP_PORT, () => {
+  console.log(`server start on port ${HTTP_PORT}`);
+});
+
+
+const wsServer = new WebSocket.Server({ server });
+
 
 const SEND_TYPE_REG = '1001'; // 注册后发送用户id
 const SEND_TYPE_ROOM_INFO = '1002'; // 发送房间信息
@@ -30,23 +63,51 @@ const RECEIVE_TYPE_CONNECTED = '9003'; // joined
 const RECEIVE_TYPE_KEEPALIVE = '9999'; // keep-alive
 const RECEIVE_TYPE_UPDATE_NICKNAME = '9004'; // 更新昵称请求
 
+// 从room_pwd.json中获取房间密码
+let roomPwd = { };
+try {
+  // 获取可执行程序所在目录
+  const exePath = process.pkg ? path.dirname(process.execPath) : __dirname;
+  roomPwdConfig = require(path.join(exePath, 'room_pwd.json'));
+  let roomIds = [];
+  roomPwdConfig.forEach(item => {
+    roomIds.push(item.roomId);
+    roomPwd[item.roomId] = { "pwd": item.pwd, "turns": item.turns };
+  });
+  console.log(`加载房间数据: ${roomIds.join(',')}`);
+} catch (e) {
+  // 没有room_pwd.json文件无需报错，不加载即可
+  // console.error('Failed to load room_pwd.json');
+}
 
-console.log(`Signaling server running on ws://localhost:${PORT}`);
-
-server.on('connection', (socket, request) => {
+wsServer.on('connection', (socket, request) => {
   const ip = request.headers['x-forwarded-for'] ?? request.headers['x-real-ip'] ?? socket._socket.remoteAddress.split("::ffff:").join("");
-
-  const urlWithPath = request.url.split('/')
+  const urlWithPath = request.url.replace(/^\//g, '').split('/')
   let roomId = null;
+  let pwd = null;
   if (urlWithPath.length > 1 && urlWithPath[1].length > 0 && urlWithPath[1].length <= 32) {
-    roomId = urlWithPath[1];
+    roomId = urlWithPath[1].trim();
+  }
+  if (urlWithPath.length > 2 && urlWithPath[2].length > 0 && urlWithPath[2].length <= 32) {
+    pwd = urlWithPath[2].trim();
   }
   if (roomId === 'ws') {  // 兼容旧版本
     roomId = null;
   }
+  if (roomId === '') {
+    roomId = null;
+  }
+  let turns = null;
+  if (roomId) {
+    if (!pwd || !roomPwd[roomId] || roomPwd[roomId].pwd.toLowerCase() !== pwd.toLowerCase()) {
+      roomId = null;
+    } else {
+      turns = roomPwd[roomId].turns;
+    }
+  }
   const currentId = service.registerUser(ip, roomId, socket);
   // 向客户端发送自己的id
-  socketSend_UserId(socket, currentId);
+  socketSend_UserId(socket, currentId, roomId, turns);
   
   console.log(`${currentId}@${ip}${roomId ? '/' + roomId : ''} connected`);
   
@@ -132,8 +193,8 @@ function send(socket, type, data) {
   socket.send(JSON.stringify({ type, data }));
 }
 
-function socketSend_UserId(socket, id) {
-  send(socket, SEND_TYPE_REG, { id });
+function socketSend_UserId(socket, id, roomId, turns) {
+  send(socket, SEND_TYPE_REG, { id, roomId, turns });
 }
 function socketSend_RoomInfo(socket, ip, roomId) {
   const result = service.getUserList(ip, roomId).map(user => ({ 

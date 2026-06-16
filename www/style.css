@@ -1,7 +1,7 @@
 body, html {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: #1a1a1a;
   color: #e0e0e0;
   display: flex;
@@ -33,7 +33,7 @@ body.dragover .dragtip h1 {
 }
 pre {
   margin: 0;
-  font-family: "Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","微软雅黑",Arial,sans-serif;
+  font-family: monospace, "Helvetica Neue",Helvetica,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","微软雅黑",Arial,sans-serif;
 }
 .left {
   flex: 1;
@@ -99,6 +99,9 @@ pre {
   font-weight: 500;
   font-size: 14px;
   user-select: none;
+}
+.chat-item .chat-item_user.system {
+  color: #FFA726;
 }
 .chat-item .chat-item_content {
   display: flex;
@@ -365,10 +368,16 @@ pre {
   width: 100%;
   padding: 8px;
   border: 1px solid #363636;
+  box-sizing: border-box;
   background: #2a2a2a;
   color: #e0e0e0;
   border-radius: 4px;
   font-size: 14px;
+}
+
+.nickname-input-container input[type="password"] {
+  letter-spacing: 2px;
+  font-family: monospace;
 }
 
 .nickname-input-container input:focus {
@@ -433,4 +442,24 @@ pre {
     color: #64B5F6;
     background-color: #363636;
   }
+}
+
+/* 图片预览样式 */
+.image-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.image-preview img {
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.image-preview img:hover {
+  transform: scale(1.02);
 }
